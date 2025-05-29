@@ -2,7 +2,7 @@ import time
 import requests
 import telegram
 from datetime import datetime, timedelta
-import pytz
+import pytz  # Fuso horário
 
 # === CONFIGURAÇÕES ===
 API_KEY = "c95f42c34f934f91938f91e5cc8604a6"
@@ -10,9 +10,7 @@ INTERVAL = "1min"
 TELEGRAM_TOKEN = "7239698274:AAFyg7HWLPvXceJYDope17DkfJpxtU4IU2Y"
 TELEGRAM_ID = "6821521589"
 bot = telegram.Bot(token=TELEGRAM_TOKEN)
-
 preco_anterior = None
-ultimo_sinal_enviado = None  # <-- para evitar sinal duplicado
 
 # === LER ATIVO DO ARQUIVO ===
 def obter_ativo():
@@ -64,7 +62,7 @@ def enviar_sinal(mensagem):
 
 # === MONITORAR ATIVO ===
 def monitorar():
-    global preco_anterior, ultimo_sinal_enviado
+    global preco_anterior
     fuso_brasilia = pytz.timezone("America/Sao_Paulo")
 
     while True:
@@ -77,16 +75,10 @@ def monitorar():
         preco, rsi, ma5, ma20 = obter_dados(ativo)
 
         agora = datetime.now(fuso_brasilia)
-        proxima_entrada = agora + timedelta(minutes=1)
-        horario_entrada = proxima_entrada.strftime("%H:%M:%S")
-        chave_sinal = proxima_entrada.strftime("%Y-%m-%d %H:%M")  # usar apenas até minuto
+        entrada = agora + timedelta(minutes=1)
+        horario_entrada = entrada.strftime("%H:%M:%S")  # <- Agora com segundos!
 
         if preco and rsi and ma5 and ma20:
-            # Se já enviou sinal para esse minuto, não envia novamente
-            if ultimo_sinal_enviado == chave_sinal:
-                time.sleep(5)
-                continue
-
             mensagem = f"📊 {ativo} - ${preco:.5f}\n"
             if preco_anterior:
                 variacao = ((preco - preco_anterior) / preco_anterior) * 100
@@ -103,13 +95,13 @@ def monitorar():
             elif rsi > 55 or (ma5 < ma20 and variacao < -0.01):
                 sinal = f"🔴 VENDA às {horario_entrada}"
 
-            # Só envia sinal se for COMPRA ou VENDA
-            if "COMPRA" in sinal or "VENDA" in sinal:
-                mensagem += f"📈 RSI: {rsi:.2f}\n"
-                mensagem += f"📉 MA5: {ma5:.5f} | MA20: {ma20:.5f}\n"
-                mensagem += f"📍 SINAL: {sinal}"
+            mensagem += f"📈 RSI: {rsi:.2f}\n"
+            mensagem += f"📉 MA5: {ma5:.5f} | MA20: {ma20:.5f}\n"
+            mensagem += f"📍 SINAL: {sinal}"
 
-                enviar_sinal(mensagem)
-                ultimo_sinal_enviado = chave_sinal  # marca como enviado
+            enviar_sinal(mensagem)
 
-        time.sleep(5)  # verificação rápida, mas só envia 1 vez por minuto
+        time.sleep(30)
+
+# Iniciar o monitoramento
+monitorar()
