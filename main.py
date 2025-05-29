@@ -12,13 +12,16 @@ TELEGRAM_ID = "6821521589"
 bot = telegram.Bot(token=TELEGRAM_TOKEN)
 
 preco_anterior = None
-ultimo_sinal_enviado = None  # <-- para evitar sinal duplicado
+ultimo_sinal_enviado = None
 
 # === LER ATIVO DO ARQUIVO ===
 def obter_ativo():
     try:
         with open("ativo.txt", "r") as f:
-            return f.read().strip().upper()
+            ativo = f.read().strip().upper()
+            if "(OTC" in ativo:
+                ativo = ativo.split("(")[0].strip()
+            return ativo
     except:
         return "EUR/USD"
 
@@ -59,6 +62,7 @@ def obter_dados(symbol):
 def enviar_sinal(mensagem):
     try:
         bot.send_message(chat_id=TELEGRAM_ID, text=mensagem)
+        print(f"Sinal enviado: {mensagem}")
     except Exception as e:
         print("Erro ao enviar:", e)
 
@@ -73,21 +77,28 @@ def monitorar():
             time.sleep(10)
             continue
 
+        agora = datetime.now(fuso_brasilia)
+        segundos = agora.second
+
+        # Aguarda até faltarem 10 segundos para o próximo minuto
+        if segundos != 50:
+            time.sleep(1)
+            continue
+
         ativo = obter_ativo()
         preco, rsi, ma5, ma20 = obter_dados(ativo)
-
         agora = datetime.now(fuso_brasilia)
-        proxima_entrada = agora + timedelta(minutes=1)
-        horario_entrada = proxima_entrada.strftime("%H:%M:%S")
-        chave_sinal = proxima_entrada.strftime("%Y-%m-%d %H:%M")  # usar apenas até minuto
+        entrada_em = agora + timedelta(seconds=10)  # Entrada será no próximo minuto cheio
+
+        chave_sinal = entrada_em.strftime("%Y-%m-%d %H:%M")
+        horario_entrada = entrada_em.strftime("%H:%M:%S")
 
         if preco and rsi and ma5 and ma20:
-            # Se já enviou sinal para esse minuto, não envia novamente
             if ultimo_sinal_enviado == chave_sinal:
-                time.sleep(5)
-                continue
+                continue  # já enviou esse sinal
 
             mensagem = f"📊 {ativo} - ${preco:.5f}\n"
+
             if preco_anterior:
                 variacao = ((preco - preco_anterior) / preco_anterior) * 100
                 mensagem += f"🔄 Variação: {variacao:.3f}%\n"
@@ -103,13 +114,14 @@ def monitorar():
             elif rsi > 55 or (ma5 < ma20 and variacao < -0.01):
                 sinal = f"🔴 VENDA às {horario_entrada}"
 
-            # Só envia sinal se for COMPRA ou VENDA
             if "COMPRA" in sinal or "VENDA" in sinal:
                 mensagem += f"📈 RSI: {rsi:.2f}\n"
                 mensagem += f"📉 MA5: {ma5:.5f} | MA20: {ma20:.5f}\n"
                 mensagem += f"📍 SINAL: {sinal}"
-
                 enviar_sinal(mensagem)
-                ultimo_sinal_enviado = chave_sinal  # marca como enviado
+                ultimo_sinal_enviado = chave_sinal
 
-        time.sleep(5)  # verificação rápida, mas só envia 1 vez por minuto
+        time.sleep(1)
+
+# === INICIAR MONITORAMENTO ===
+monitorar()
