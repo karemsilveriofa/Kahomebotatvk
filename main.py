@@ -2,7 +2,7 @@ import time
 import requests
 import telegram
 from datetime import datetime, timedelta
-import pytz  # NOVO
+import pytz  # Fuso horário
 
 # === CONFIGURAÇÕES ===
 API_KEY = "c95f42c34f934f91938f91e5cc8604a6"
@@ -76,7 +76,7 @@ def monitorar():
 
         agora = datetime.now(fuso_brasilia)
         entrada = agora + timedelta(minutes=1)
-        horario_entrada = entrada.strftime("%H:%M")
+        horario_entrada = entrada.strftime("%H:%M:%S")  # <- Agora com segundos!
 
         if preco and rsi and ma5 and ma20:
             mensagem = f"📊 {ativo} - ${preco:.5f}\n"
@@ -103,4 +103,5 @@ def monitorar():
 
         time.sleep(30)
 
+# Iniciar o monitoramento
 monitorar()
