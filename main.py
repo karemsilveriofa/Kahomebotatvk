@@ -15,7 +15,6 @@ bot = telegram.Bot(token=TELEGRAM_TOKEN)
 
 preco_anterior = None
 ultimo_sinal_enviado = None
-sinais_por_hora = {}
 
 # === LER ATIVO DO ARQUIVO ===
 def obter_ativo():
@@ -71,7 +70,7 @@ def enviar_sinal(mensagem):
 
 # === MONITORAR ATIVO ===
 def monitorar():
-    global preco_anterior, ultimo_sinal_enviado, sinais_por_hora
+    global preco_anterior, ultimo_sinal_enviado
     fuso_brasilia = pytz.timezone("America/Sao_Paulo")
 
     while True:
@@ -94,13 +93,13 @@ def monitorar():
 
         chave_sinal = entrada_em.strftime("%Y-%m-%d %H:%M")
         horario_entrada = entrada_em.strftime("%H:%M:%S")
-        hora_chave = entrada_em.strftime("%Y-%m-%d %H")
+
+        print(f"\n📊 [{datetime.now()}] Verificando ativo: {ativo}")
+        print(f"→ Preço: {preco}, RSI: {rsi}, MA5: {ma5}, MA20: {ma20}")
 
         if preco and rsi and ma5 and ma20:
             if ultimo_sinal_enviado == chave_sinal:
-                continue
-            if sinais_por_hora.get(hora_chave, 0) >= 2:
-                print("⚠️ Limite de sinais por hora atingido")
+                print("⏸️ Sinal já enviado neste minuto.")
                 continue
 
             mensagem = f"📊 {ativo} - ${preco:.5f}\n"
@@ -113,33 +112,23 @@ def monitorar():
                 mensagem += "🟡 Iniciando monitoramento...\n"
 
             preco_anterior = preco
-            sinal = "⚪ SEM AÇÃO"
 
-            # Estratégia refinada com precisão
-            if rsi < 35 and ma5 > ma20 and variacao > 0.02:
-                sinal = f"🟢 COMPRA às {horario_entrada}"
-            elif rsi > 65 and ma5 < ma20 and variacao < -0.02:
-                sinal = f"🔴 VENDA às {horario_entrada}"
+            # === TESTE: enviar sempre sinal de teste para garantir funcionamento ===
+            sinal = f"🧪 SINAL DE TESTE às {horario_entrada}"
+            mensagem += f"📈 RSI: {rsi:.2f}\n📉 MA5: {ma5:.5f} | MA20: {ma20:.5f}\n📍 SINAL: {sinal}"
 
-            if "COMPRA" in sinal or "VENDA" in sinal:
-                mensagem += f"📈 RSI: {rsi:.2f}\n"
-                mensagem += f"📉 MA5: {ma5:.5f} | MA20: {ma20:.5f}\n"
-                mensagem += f"📍 SINAL: {sinal}"
-                enviar_sinal(mensagem)
-                ultimo_sinal_enviado = chave_sinal
-                sinais_por_hora[hora_chave] = sinais_por_hora.get(hora_chave, 0) + 1
-            else:
-                print("🔎 Condições não confirmadas - Sem sinal.")
+            enviar_sinal(mensagem)
+            ultimo_sinal_enviado = chave_sinal
 
         else:
-            print("⚠️ Dados insuficientes para decisão.")
+            print("⚠️ Dados incompletos ou erro na API. Nenhum sinal enviado.")
 
         time.sleep(1)
 
 # === INICIAR BOT EM THREAD ===
 threading.Thread(target=monitorar, daemon=True).start()
 
-# === FLASK APP PARA MANTER O BOT ONLINE ===
+# === FLASK APP PARA MANTER O BOT ACORDADO ===
 app = Flask(__name__)
 
 @app.route("/")
@@ -152,4 +141,4 @@ def ping():
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=10000)
-            
+        
