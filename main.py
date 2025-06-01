@@ -27,7 +27,7 @@ def obter_ativo():
             return ativo
     except Exception as e:
         print(f"[ERRO] Falha ao ler ativo.txt: {e}")
-        return "AUDCHF"
+        return "CAD/CHF"  # valor padrão
 
 # === Enviar mensagem pelo Telegram ===
 def enviar_sinal(texto):
@@ -44,7 +44,13 @@ def obter_candles(ativo):
         resposta = requests.get(url)
         dados = resposta.json()
         print(f"[API] Resposta: {dados}")  # DEBUG
-        return dados.get("values", None)
+
+        if "values" in dados:
+            return dados["values"]
+        else:
+            erro = dados.get("message", "Erro desconhecido")
+            enviar_sinal(f"❌ Erro na API para {ativo}: {erro}")
+            return None
     except Exception as e:
         print(f"[ERRO API] {e}")
         return None
