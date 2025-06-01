@@ -1,103 +1,79 @@
 import time
-import requests
-import telegram
 from datetime import datetime, timedelta
 import pytz
-import threading
-from flask import Flask
 
-# === CONFIGURAÇÕES ===
-API_KEY = "c95f42c34f934f91938f91e5cc8604a6"
-SYMBOL = "EUR/USD"
-INTERVAL = "1min"
+# Variáveis globais
+preco_anterior = None
+ultimo_sinal_enviado = None
+ultimo_envio_tempo = datetime.min  # controla intervalo entre sinais
 
-TELEGRAM_TOKEN = "7239698274:AAFyg7HWLPvXceJYDope17DkfJpxtU4IU2Y"
-TELEGRAM_ID = "6821521589"
-
-FUSO = pytz.timezone('America/Sao_Paulo')
-app = Flask(__name__)
-
-# Inicializa o bot
-try:
-    bot = telegram.Bot(token=TELEGRAM_TOKEN)
-    bot.get_me()  # valida token
-except telegram.error.InvalidToken:
-    print("❌ ERRO: Token do Telegram inválido. Verifique.")
-    exit()
-
-ultimo_sinal_enviado = ""
-ultimo_envio = datetime.now(FUSO) - timedelta(minutes=5)
-
-def obter_dados():
-    url = f"https://api.twelvedata.com/time_series?symbol={SYMBOL}&interval={INTERVAL}&apikey={API_KEY}&outputsize=20&indicators=ma,ma:5,ma:20,rsi"
-    resposta = requests.get(url)
-    try:
-        dados = resposta.json()
-        valores = dados['values']
-        rsi = float(valores[0]['rsi'])
-        ma5 = float(valores[0]['ma5'])
-        ma20 = float(valores[0]['ma20'])
-        close_atual = float(valores[0]['close'])
-        close_anterior = float(valores[1]['close'])
-        variacao = (close_atual - close_anterior) / close_anterior
-        return rsi, ma5, ma20, variacao, close_atual
-    except:
-        print("❌ Erro ao obter dados")
-        return None
-
-def enviar_sinal(mensagem):
-    try:
-        bot.send_message(chat_id=TELEGRAM_ID, text=mensagem)
-    except telegram.error.TelegramError as e:
-        print(f"❌ Erro ao enviar mensagem no Telegram: {e}")
+# Intervalo máximo entre sinais (em segundos)
+INTERVALO_MINIMO_SINAL = 120  # 2 minutos
 
 def monitorar():
-    global ultimo_sinal_enviado, ultimo_envio
+    global preco_anterior, ultimo_sinal_enviado, ultimo_envio_tempo
+    fuso_brasilia = pytz.timezone("America/Sao_Paulo")
+
     while True:
-        agora = datetime.now(FUSO)
-        if (agora - ultimo_envio).total_seconds() < 180:
+        if not bot_ativo():
+            print("⛔ Bot desligado")
             time.sleep(10)
             continue
 
-        print(f"\n⏱️ Verificando às {agora.strftime('%H:%M:%S')}")
-        dados = obter_dados()
-        if not dados:
-            time.sleep(60)
+        agora = datetime.now(fuso_brasilia)
+
+        # Verifica se já passou o intervalo mínimo para enviar próximo sinal
+        if (agora - ultimo_envio_tempo).total_seconds() < INTERVALO_MINIMO_SINAL:
+            time.sleep(1)
             continue
 
-        rsi, ma5, ma20, variacao, preco = dados
-        horario_entrada = agora.strftime("%H:%M:%S")
-        chave_sinal = f"{rsi:.2f}-{ma5:.5f}-{ma20:.5f}"
+        ativo = obter_ativo()
+        preco, rsi, ma5, ma20 = obter_dados(ativo)
 
-        sinal = None
+        if preco is None or rsi is None or ma5 is None or ma20 is None:
+            print("Dados incompletos. Pulando ciclo.")
+            time.sleep(5)
+            continue
 
-        # === FILTROS DE PRECISÃO AJUSTADOS (mais sensíveis) ===
-        if rsi < 52 and ma5 > ma20 and variacao > 0.001:
+        entrada_em = agora + timedelta(seconds=10)
+        chave_sinal = entrada_em.strftime("%Y-%m-%d %H:%M")
+        horario_entrada = entrada_em.strftime("%H:%M:%S")
+
+        if ultimo_sinal_enviado == chave_sinal:
+            time.sleep(1)
+            continue
+
+        mensagem = f"📊 {ativo} - ${preco:.5f}\n"
+
+        if preco_anterior:
+            variacao = ((preco - preco_anterior) / preco_anterior) * 100
+            mensagem += f"🔄 Variação: {variacao:.4f}%\n"
+        else:
+            variacao = 0
+            mensagem += "🟡 Iniciando monitoramento...\n"
+
+        preco_anterior = preco
+        sinal = "⚪ SEM AÇÃO"
+
+        # Estratégia melhorada:
+        # RSI < 35 = sobrevenda = COMPRA
+        # RSI > 65 = sobrecompra = VENDA
+        # Cruzamento das médias móveis confirmam a tendência
+        # Variação mínima para sensibilidade (0.005%)
+        if (rsi < 35 and ma5 > ma20 and variacao > 0.005):
             sinal = f"🟢 COMPRA às {horario_entrada}"
-        elif rsi > 48 and ma5 < ma20 and variacao < -0.001:
+        elif (rsi > 65 and ma5 < ma20 and variacao < -0.005):
             sinal = f"🔴 VENDA às {horario_entrada}"
 
-        if sinal and chave_sinal != ultimo_sinal_enviado:
-            mensagem = (
-                f"📊 RSI: {rsi:.2f}\n"
-                f"📈 MA5: {ma5:.5f} | MA20: {ma20:.5f}\n"
-                f"📉 Variação: {variacao:.3%}\n"
-                f"🚨 SINAL: {sinal}"
-            )
+        if "COMPRA" in sinal or "VENDA" in sinal:
+            mensagem += f"📈 RSI: {rsi:.2f}\n"
+            mensagem += f"📉 MA5: {ma5:.5f} | MA20: {ma20:.5f}\n"
+            mensagem += f"📍 SINAL: {sinal}"
             enviar_sinal(mensagem)
             ultimo_sinal_enviado = chave_sinal
-            ultimo_envio = agora
-            print("✅ Sinal enviado:", sinal)
+            ultimo_envio_tempo = agora
         else:
-            print("⚠️ Nenhum sinal novo ou critérios não atendidos.")
+            print(f"{agora.strftime('%H:%M:%S')} - Sem sinal relevante.")
 
-        time.sleep(60)
-
-@app.route('/ping')
-def ping():
-    return "Bot está online 🟢"
-
-if __name__ == "__main__":
-    threading.Thread(target=monitorar).start()
-    app.run(host="0.0.0.0", port=10000)
-    
+        time.sleep(1)
+        
