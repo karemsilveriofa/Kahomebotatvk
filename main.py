@@ -11,98 +11,93 @@ TELEGRAM_TOKEN = "7239698274:AAFyg7HWLPvXceJYDope17DkfJpxtU4IU2Y"
 TELEGRAM_ID = "6821521589"
 INTERVALO = "1min"
 
-# === Inicializa o bot Telegram ===
 bot = telegram.Bot(token=TELEGRAM_TOKEN)
-
-# === Flask para manter serviço ativo na Render ===
 app = Flask(__name__)
 
 @app.route('/')
 def home():
     return "Bot de sinais ativo!"
 
-# === Ler ativo do arquivo ativo.txt ===
+# === Obter o ativo do arquivo ===
 def obter_ativo():
     try:
         with open("ativo.txt", "r") as f:
-            return f.read().strip()
-    except:
-        return "AUDCHF"  # padrão
+            ativo = f.read().strip()
+            print(f"[INFO] Ativo lido: {ativo}")
+            return ativo
+    except Exception as e:
+        print(f"[ERRO] Falha ao ler ativo.txt: {e}")
+        return "AUDCHF"
 
-# === Enviar mensagem Telegram ===
+# === Enviar mensagem pelo Telegram ===
 def enviar_sinal(texto):
     try:
         bot.send_message(chat_id=TELEGRAM_ID, text=texto)
-        print(f"[{datetime.now()}] Sinal enviado: {texto}")
+        print(f"[ENVIADO] {texto}")
     except Exception as e:
-        print(f"[ERRO] Não foi possível enviar sinal: {e}")
+        print(f"[ERRO TELEGRAM] {e}")
 
-# === Obter dados da API Twelve Data ===
-def obter_candles(ativo, intervalo):
-    url = (
-        f"https://api.twelvedata.com/time_series?"
-        f"symbol={ativo}&interval={intervalo}&apikey={API_KEY}&outputsize=3"
-    )
+# === Obter candles da API ===
+def obter_candles(ativo):
+    url = f"https://api.twelvedata.com/time_series?symbol={ativo}&interval={INTERVALO}&apikey={API_KEY}&outputsize=3"
     try:
         resposta = requests.get(url)
         dados = resposta.json()
-        if "values" in dados:
-            return dados["values"]
-        else:
-            print(f"[ERRO API] {dados}")
-            return None
+        print(f"[API] Resposta: {dados}")  # DEBUG
+        return dados.get("values", None)
     except Exception as e:
-        print(f"[ERRO] Falha na requisição API: {e}")
+        print(f"[ERRO API] {e}")
         return None
 
-# === Função principal que calcula a direção da próxima vela ===
+# === Lógica de cálculo e envio do sinal ===
 def calcular_sinal():
     ativo = obter_ativo()
-    candles = obter_candles(ativo, INTERVALO)
+    candles = obter_candles(ativo)
+
     if not candles or len(candles) < 2:
-        print("[AVISO] Dados insuficientes para cálculo")
+        msg = f"[AVISO] Dados insuficientes para {ativo}. Nenhum sinal gerado."
+        print(msg)
+        enviar_sinal(msg)
         return
 
-    # A API retorna candles do mais recente para o mais antigo:
-    # candles[0] = vela mais recente (última fechada)
-    # candles[1] = vela anterior
-    vela_mais_recente = candles[0]
-    vela_anterior = candles[1]
+    # Pega duas últimas velas
+    ultima = candles[0]
+    anterior = candles[1]
 
-    fechamento_recente = float(vela_mais_recente["close"])
-    fechamento_anterior = float(vela_anterior["close"])
+    fechamento_atual = float(ultima["close"])
+    fechamento_passado = float(anterior["close"])
 
-    # Se preço subiu, próxima vela deve subir (sinal compra), senão venda
-    if fechamento_recente > fechamento_anterior:
+    print(f"[DADOS] Último: {fechamento_atual}, Anterior: {fechamento_passado}")
+
+    if fechamento_atual > fechamento_passado:
         direcao = "📈 COMPRA"
-    elif fechamento_recente < fechamento_anterior:
+    elif fechamento_atual < fechamento_passado:
         direcao = "📉 VENDA"
     else:
-        direcao = "⏸️ SEM MOVIMENTO"
-
-    horario = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        direcao = "⏸️ LATERAL"
 
     mensagem = (
-        f"SINAL DE TRADING\n"
+        f"SINAL DE ENTRADA 🔔\n"
         f"Ativo: {ativo}\n"
-        f"Direção prevista: {direcao}\n"
-        f"Preço último fechamento: R${fechamento_recente:.5f}\n"
-        f"Horário do sinal: {horario}"
+        f"Direção: {direcao}\n"
+        f"Fechamento anterior: {fechamento_passado:.5f}\n"
+        f"Fechamento atual: {fechamento_atual:.5f}\n"
+        f"Horário: {datetime.now().strftime('%H:%M:%S')}"
     )
 
     enviar_sinal(mensagem)
 
-# === Loop que executa a verificação a cada 60 segundos ===
+# === Loop que roda a análise a cada minuto ===
 def iniciar_bot():
     enviar_sinal("✅ Bot de sinais iniciado com sucesso!")
     while True:
+        print("[LOOP] Executando nova análise...")
         calcular_sinal()
         time.sleep(60)
 
-# === Thread para rodar o bot paralelamente ao Flask ===
+# === Thread principal ===
 threading.Thread(target=iniciar_bot).start()
 
-# === Executar Flask para manter o serviço ativo ===
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=10000)
     
