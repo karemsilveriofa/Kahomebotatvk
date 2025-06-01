@@ -15,8 +15,6 @@ bot = telegram.Bot(token=TELEGRAM_TOKEN)
 
 preco_anterior = None
 ultimo_sinal_enviado = None
-ultimo_envio_tempo = None
-INTERVALO_MINIMO_SINAL = 180  # 3 minutos
 
 # === LER ATIVO DO ARQUIVO ===
 def obter_ativo():
@@ -25,19 +23,15 @@ def obter_ativo():
             ativo = f.read().strip().upper()
             if "(OTC" in ativo:
                 ativo = ativo.split("(")[0].strip()
-            print(f"[INFO] Ativo atual: {ativo}")
             return ativo
     except:
-        print("[ERRO] Erro ao ler ativo.txt")
         return "EUR/USD"
 
 # === LER STATUS ON/OFF ===
 def bot_ativo():
     try:
         with open("status.txt", "r") as f:
-            status = f.read().strip().upper()
-            print(f"[INFO] Status do bot: {status}")
-            return status == "ON"
+            return f.read().strip().upper() == "ON"
     except:
         return True
 
@@ -63,25 +57,25 @@ def obter_dados(symbol):
 
         return preco, rsi, ma5, ma20
     except Exception as e:
-        print("[ERRO] Erro ao obter dados:", e)
+        print("Erro ao obter dados:", e)
         return None, None, None, None
 
 # === ENVIAR MENSAGEM PARA TELEGRAM ===
 def enviar_sinal(mensagem):
     try:
         bot.send_message(chat_id=TELEGRAM_ID, text=mensagem)
-        print(f"[✅] Sinal enviado: {mensagem}")
+        print(f"Sinal enviado: {mensagem}")
     except Exception as e:
-        print("[ERRO] Falha ao enviar sinal:", e)
+        print("Erro ao enviar:", e)
 
 # === MONITORAR ATIVO ===
 def monitorar():
-    global preco_anterior, ultimo_sinal_enviado, ultimo_envio_tempo
+    global preco_anterior, ultimo_sinal_enviado
     fuso_brasilia = pytz.timezone("America/Sao_Paulo")
 
     while True:
         if not bot_ativo():
-            print("⛔ Bot desligado.")
+            print("⛔ Bot desligado")
             time.sleep(10)
             continue
 
@@ -96,20 +90,12 @@ def monitorar():
         preco, rsi, ma5, ma20 = obter_dados(ativo)
         agora = datetime.now(fuso_brasilia)
         entrada_em = agora + timedelta(seconds=10)
-        chave_sinal = entrada_em.strftime("%Y-%m-%d %H:%M")
 
-        # Verifica intervalo mínimo
-        if ultimo_envio_tempo:
-            diff = (agora - ultimo_envio_tempo).total_seconds()
-            if diff < INTERVALO_MINIMO_SINAL:
-                print(f"[INFO] Intervalo mínimo não atingido ({int(diff)}s). Aguardando...")
-                time.sleep(1)
-                continue
+        chave_sinal = entrada_em.strftime("%Y-%m-%d %H:%M")
+        horario_entrada = entrada_em.strftime("%H:%M:%S")
 
         if preco and rsi and ma5 and ma20:
-            print(f"[DEBUG] Dados: Preço={preco}, RSI={rsi}, MA5={ma5}, MA20={ma20}")
             if ultimo_sinal_enviado == chave_sinal:
-                print("[INFO] Sinal já enviado para este minuto.")
                 continue
 
             mensagem = f"📊 {ativo} - ${preco:.5f}\n"
@@ -125,9 +111,9 @@ def monitorar():
             sinal = "⚪ SEM AÇÃO"
 
             if rsi < 45 or (ma5 > ma20 and variacao > 0.01):
-                sinal = f"🟢 COMPRA às {entrada_em.strftime('%H:%M:%S')}"
+                sinal = f"🟢 COMPRA às {horario_entrada}"
             elif rsi > 55 or (ma5 < ma20 and variacao < -0.01):
-                sinal = f"🔴 VENDA às {entrada_em.strftime('%H:%M:%S')}"
+                sinal = f"🔴 VENDA às {horario_entrada}"
 
             if "COMPRA" in sinal or "VENDA" in sinal:
                 mensagem += f"📈 RSI: {rsi:.2f}\n"
@@ -135,13 +121,13 @@ def monitorar():
                 mensagem += f"📍 SINAL: {sinal}"
                 enviar_sinal(mensagem)
                 ultimo_sinal_enviado = chave_sinal
-                ultimo_envio_tempo = agora
 
-        else:
-            print("[ERRO] Dados incompletos. Pulando...")
         time.sleep(1)
 
-# === FLASK PARA MANTER O BOT VIVO ===
+# === INICIAR BOT EM THREAD ===
+threading.Thread(target=monitorar, daemon=True).start()
+
+# === FLASK APP PARA MANTER O BOT ACORDADO ===
 app = Flask(__name__)
 
 @app.route("/")
@@ -152,9 +138,6 @@ def home():
 def ping():
     return "pong"
 
-# === INICIAR THREAD ===
-threading.Thread(target=monitorar, daemon=True).start()
-
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8080)
+    app.run(host="0.0.0.0", port=10000)
     
