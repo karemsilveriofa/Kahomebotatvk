@@ -7,19 +7,26 @@ import threading
 from flask import Flask
 
 # === CONFIGURAÇÕES ===
-API_KEY = "SUA_API_TWELVE_DATA"
+API_KEY = "c95f42c34f934f91938f91e5cc8604a6"
 SYMBOL = "EUR/USD"
 INTERVAL = "1min"
-TELEGRAM_TOKEN = "SEU_TOKEN_TELEGRAM"
-TELEGRAM_ID = "SEU_ID_TELEGRAM"
-FUSO = pytz.timezone('America/Sao_Paulo')
 
+TELEGRAM_TOKEN = "7239698274:AAFyg7HWLPvXceJYDope17DkfJpxtU4IU2Y"
+TELEGRAM_ID = "6821521589"
+
+FUSO = pytz.timezone('America/Sao_Paulo')
 app = Flask(__name__)
 
-bot = telegram.Bot(token=TELEGRAM_TOKEN)
+# Inicializa o bot
+try:
+    bot = telegram.Bot(token=TELEGRAM_TOKEN)
+    bot.get_me()  # valida token
+except telegram.error.InvalidToken:
+    print("❌ ERRO: Token do Telegram inválido. Verifique.")
+    exit()
 
 ultimo_sinal_enviado = ""
-ultimo_envio = datetime.now(FUSO) - timedelta(minutes=5)  # Para permitir o primeiro envio
+ultimo_envio = datetime.now(FUSO) - timedelta(minutes=5)
 
 def obter_dados():
     url = f"https://api.twelvedata.com/time_series?symbol={SYMBOL}&interval={INTERVAL}&apikey={API_KEY}&outputsize=20&indicators=ma,ma:5,ma:20,rsi"
@@ -39,7 +46,10 @@ def obter_dados():
         return None
 
 def enviar_sinal(mensagem):
-    bot.send_message(chat_id=TELEGRAM_ID, text=mensagem)
+    try:
+        bot.send_message(chat_id=TELEGRAM_ID, text=mensagem)
+    except telegram.error.TelegramError as e:
+        print(f"❌ Erro ao enviar mensagem no Telegram: {e}")
 
 def monitorar():
     global ultimo_sinal_enviado, ultimo_envio
@@ -49,7 +59,7 @@ def monitorar():
             time.sleep(10)
             continue
 
-        print(f"\n⏱️ Iniciando verificação às {agora.strftime('%H:%M:%S')}")
+        print(f"\n⏱️ Verificando às {agora.strftime('%H:%M:%S')}")
         dados = obter_dados()
         if not dados:
             time.sleep(60)
@@ -61,11 +71,11 @@ def monitorar():
 
         sinal = None
 
-        # === FILTROS AJUSTADOS (MAIS SENSÍVEIS) ===
-        if rsi < 50 and ma5 > ma20 and variacao > 0.005:
-            sinal = f"🟢 POSSÍVEL COMPRA às {horario_entrada}"
-        elif rsi > 50 and ma5 < ma20 and variacao < -0.005:
-            sinal = f"🔴 POSSÍVEL VENDA às {horario_entrada}"
+        # === FILTROS DE PRECISÃO AJUSTADOS (mais sensíveis) ===
+        if rsi < 52 and ma5 > ma20 and variacao > 0.001:
+            sinal = f"🟢 COMPRA às {horario_entrada}"
+        elif rsi > 48 and ma5 < ma20 and variacao < -0.001:
+            sinal = f"🔴 VENDA às {horario_entrada}"
 
         if sinal and chave_sinal != ultimo_sinal_enviado:
             mensagem = (
@@ -79,14 +89,13 @@ def monitorar():
             ultimo_envio = agora
             print("✅ Sinal enviado:", sinal)
         else:
-            print("⚠️ Nenhum sinal gerado ou sinal repetido.")
+            print("⚠️ Nenhum sinal novo ou critérios não atendidos.")
 
-        time.sleep(60)  # Aguarda 1 minuto antes da próxima verificação
+        time.sleep(60)
 
-# === FLASK ===
 @app.route('/ping')
 def ping():
-    return "Bot está rodando 🟢"
+    return "Bot está online 🟢"
 
 if __name__ == "__main__":
     threading.Thread(target=monitorar).start()
