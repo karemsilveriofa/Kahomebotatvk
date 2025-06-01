@@ -112,13 +112,20 @@ def monitorar():
                 mensagem += "🟡 Iniciando monitoramento...\n"
 
             preco_anterior = preco
+            sinal = None
 
-            # === TESTE: enviar sempre sinal de teste para garantir funcionamento ===
-            sinal = f"🧪 SINAL DE TESTE às {horario_entrada}"
-            mensagem += f"📈 RSI: {rsi:.2f}\n📉 MA5: {ma5:.5f} | MA20: {ma20:.5f}\n📍 SINAL: {sinal}"
+            # === FILTROS DE PRECISÃO ===
+            if rsi < 45 and ma5 > ma20 and variacao > 0.01:
+                sinal = f"🟢 COMPRA às {horario_entrada}"
+            elif rsi > 55 and ma5 < ma20 and variacao < -0.01:
+                sinal = f"🔴 VENDA às {horario_entrada}"
 
-            enviar_sinal(mensagem)
-            ultimo_sinal_enviado = chave_sinal
+            if sinal:
+                mensagem += f"📈 RSI: {rsi:.2f}\n📉 MA5: {ma5:.5f} | MA20: {ma20:.5f}\n📍 SINAL: {sinal}"
+                enviar_sinal(mensagem)
+                ultimo_sinal_enviado = chave_sinal
+            else:
+                print("⚠️ Nenhum sinal gerado: critérios não atendidos.")
 
         else:
             print("⚠️ Dados incompletos ou erro na API. Nenhum sinal enviado.")
@@ -141,4 +148,4 @@ def ping():
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=10000)
-        
+    
