@@ -3,6 +3,8 @@ import requests
 import telegram
 from datetime import datetime, timedelta
 import pytz
+import threading
+from flask import Flask
 
 # === CONFIGURAÇÕES ===
 API_KEY = "c95f42c34f934f91938f91e5cc8604a6"
@@ -80,7 +82,6 @@ def monitorar():
         agora = datetime.now(fuso_brasilia)
         segundos = agora.second
 
-        # Aguarda até faltarem 10 segundos para o próximo minuto
         if segundos != 50:
             time.sleep(1)
             continue
@@ -88,14 +89,14 @@ def monitorar():
         ativo = obter_ativo()
         preco, rsi, ma5, ma20 = obter_dados(ativo)
         agora = datetime.now(fuso_brasilia)
-        entrada_em = agora + timedelta(seconds=10)  # Entrada será no próximo minuto cheio
+        entrada_em = agora + timedelta(seconds=10)
 
         chave_sinal = entrada_em.strftime("%Y-%m-%d %H:%M")
         horario_entrada = entrada_em.strftime("%H:%M:%S")
 
         if preco and rsi and ma5 and ma20:
             if ultimo_sinal_enviado == chave_sinal:
-                continue  # já enviou esse sinal
+                continue
 
             mensagem = f"📊 {ativo} - ${preco:.5f}\n"
 
@@ -123,5 +124,20 @@ def monitorar():
 
         time.sleep(1)
 
-# === INICIAR MONITORAMENTO ===
-monitorar()
+# === INICIAR BOT EM THREAD ===
+threading.Thread(target=monitorar, daemon=True).start()
+
+# === FLASK APP PARA MANTER O BOT ACORDADO ===
+app = Flask(__name__)
+
+@app.route("/")
+def home():
+    return "✅ Bot de sinais está online."
+
+@app.route("/ping")
+def ping():
+    return "pong"
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=10000)
+    
