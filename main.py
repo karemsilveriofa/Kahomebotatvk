@@ -23,21 +23,16 @@ def obter_ativo():
             ativo = f.read().strip().upper()
             if "(OTC" in ativo:
                 ativo = ativo.split("(")[0].strip()
-            print(f"[✅] Ativo lido: {ativo}")
             return ativo
-    except Exception as e:
-        print("[⚠️] Erro ao ler ativo.txt:", e)
+    except:
         return "EUR/USD"
 
 # === LER STATUS ON/OFF ===
 def bot_ativo():
     try:
         with open("status.txt", "r") as f:
-            status = f.read().strip().upper()
-            print(f"[ℹ️] Status atual do bot: {status}")
-            return status == "ON"
-    except Exception as e:
-        print("[⚠️] Erro ao ler status.txt:", e)
+            return f.read().strip().upper() == "ON"
+    except:
         return True
 
 # === OBTER DADOS DO TWELVEDATA ===
@@ -60,28 +55,27 @@ def obter_dados(symbol):
         ma5 = float(ma5_data["values"][0]["ma"]) if "values" in ma5_data else None
         ma20 = float(ma20_data["values"][0]["ma"]) if "values" in ma20_data else None
 
-        print(f"[📈] Dados: Preço={preco:.5f}, RSI={rsi}, MA5={ma5}, MA20={ma20}")
         return preco, rsi, ma5, ma20
     except Exception as e:
-        print("[❌] Erro ao obter dados da API:", e)
+        print("❌ Erro ao obter dados:", e)
         return None, None, None, None
 
 # === ENVIAR MENSAGEM PARA TELEGRAM ===
 def enviar_sinal(mensagem):
     try:
         bot.send_message(chat_id=TELEGRAM_ID, text=mensagem)
-        print("[📤] Sinal enviado com sucesso!")
+        print(f"✅ Sinal enviado: {mensagem}")
     except Exception as e:
-        print("[❌] Erro ao enviar para o Telegram:", e)
+        print("❌ Erro ao enviar:", e)
 
-# === MONITORAR ATIVO E ENVIAR SINAL ===
+# === MONITORAR ATIVO ===
 def monitorar():
     global preco_anterior, ultimo_sinal_enviado
     fuso_brasilia = pytz.timezone("America/Sao_Paulo")
 
     while True:
         if not bot_ativo():
-            print("[⛔] Bot está desligado no arquivo status.txt")
+            print("⛔ Bot desligado")
             time.sleep(10)
             continue
 
@@ -102,8 +96,6 @@ def monitorar():
 
         if preco and rsi and ma5 and ma20:
             if ultimo_sinal_enviado == chave_sinal:
-                print("[⏱️] Sinal já enviado para esse minuto. Aguardando próximo...")
-                time.sleep(1)
                 continue
 
             mensagem = f"📊 {ativo} - ${preco:.5f}\n"
@@ -118,9 +110,10 @@ def monitorar():
             preco_anterior = preco
             sinal = "⚪ SEM AÇÃO"
 
-            if rsi < 45 or (ma5 > ma20 and variacao > 0.01):
+            # === CRITÉRIO MAIS SENSÍVEL ===
+            if rsi < 50 or (ma5 > ma20 and variacao > 0.005):
                 sinal = f"🟢 COMPRA às {horario_entrada}"
-            elif rsi > 55 or (ma5 < ma20 and variacao < -0.01):
+            elif rsi > 50 or (ma5 < ma20 and variacao < -0.005):
                 sinal = f"🔴 VENDA às {horario_entrada}"
 
             if "COMPRA" in sinal or "VENDA" in sinal:
@@ -130,16 +123,14 @@ def monitorar():
                 enviar_sinal(mensagem)
                 ultimo_sinal_enviado = chave_sinal
             else:
-                print("[ℹ️] Nenhum sinal gerado nesse momento.")
-        else:
-            print("[⚠️] Dados incompletos, sinal ignorado.")
+                print(f"[ℹ️] Nenhum sinal gerado nesse momento. RSI={rsi:.2f}, MA5={ma5:.5f}, MA20={ma20:.5f}")
 
         time.sleep(1)
 
-# === INICIAR THREAD DE MONITORAMENTO ===
+# === INICIAR BOT EM THREAD ===
 threading.Thread(target=monitorar, daemon=True).start()
 
-# === FLASK APP PARA MANTER O BOT ONLINE NA RENDER ===
+# === FLASK APP PARA MANTER O BOT ACORDADO ===
 app = Flask(__name__)
 
 @app.route("/")
