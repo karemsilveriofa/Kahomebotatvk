@@ -18,6 +18,7 @@ bot = telegram.Bot(token=TELEGRAM_TOKEN)
 preco_anterior = None
 ultimo_sinal_enviado = None
 
+# === LER ATIVO DO ARQUIVO ===
 def obter_ativo():
     try:
         with open("ativo.txt", "r") as f:
@@ -28,6 +29,7 @@ def obter_ativo():
     except:
         return "EUR/USD"
 
+# === LER STATUS ON/OFF ===
 def bot_ativo():
     try:
         with open("status.txt", "r") as f:
@@ -35,6 +37,7 @@ def bot_ativo():
     except:
         return True
 
+# === OBTER DADOS DO TWELVEDATA ===
 def obter_dados(symbol):
     try:
         preco_url = f"https://api.twelvedata.com/time_series?symbol={symbol}&interval={INTERVAL}&apikey={API_KEY}&outputsize=2"
@@ -59,6 +62,7 @@ def obter_dados(symbol):
         print("Erro ao obter dados:", e)
         return None, None, None, None
 
+# === ENVIAR MENSAGEM PARA TELEGRAM ===
 def enviar_sinal(mensagem):
     try:
         bot.send_message(chat_id=TELEGRAM_ID, text=mensagem)
@@ -66,6 +70,7 @@ def enviar_sinal(mensagem):
     except Exception as e:
         print("Erro ao enviar:", e)
 
+# === MONITORAR ATIVO ===
 def monitorar():
     global preco_anterior, ultimo_sinal_enviado
     fuso_brasilia = pytz.timezone("America/Sao_Paulo")
@@ -121,10 +126,10 @@ def monitorar():
 
         time.sleep(1)
 
-# Iniciar thread do monitoramento
+# === INICIAR BOT EM THREAD ===
 threading.Thread(target=monitorar, daemon=True).start()
 
-# Flask App para manter o serviço vivo na Render
+# === FLASK APP PARA MANTER O BOT ACORDADO ===
 app = Flask(__name__)
 
 @app.route("/")
