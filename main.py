@@ -15,6 +15,7 @@ bot = telegram.Bot(token=TELEGRAM_TOKEN)
 
 preco_anterior = None
 ultimo_sinal_enviado = None
+sinais_por_hora = {}
 
 # === LER ATIVO DO ARQUIVO ===
 def obter_ativo():
@@ -57,20 +58,20 @@ def obter_dados(symbol):
 
         return preco, rsi, ma5, ma20
     except Exception as e:
-        print("Erro ao obter dados:", e)
+        print("❌ Erro ao obter dados:", e)
         return None, None, None, None
 
 # === ENVIAR MENSAGEM PARA TELEGRAM ===
 def enviar_sinal(mensagem):
     try:
         bot.send_message(chat_id=TELEGRAM_ID, text=mensagem)
-        print(f"Sinal enviado: {mensagem}")
+        print(f"✅ Sinal enviado: {mensagem}")
     except Exception as e:
-        print("Erro ao enviar:", e)
+        print("❌ Erro ao enviar:", e)
 
 # === MONITORAR ATIVO ===
 def monitorar():
-    global preco_anterior, ultimo_sinal_enviado
+    global preco_anterior, ultimo_sinal_enviado, sinais_por_hora
     fuso_brasilia = pytz.timezone("America/Sao_Paulo")
 
     while True:
@@ -93,9 +94,13 @@ def monitorar():
 
         chave_sinal = entrada_em.strftime("%Y-%m-%d %H:%M")
         horario_entrada = entrada_em.strftime("%H:%M:%S")
+        hora_chave = entrada_em.strftime("%Y-%m-%d %H")
 
         if preco and rsi and ma5 and ma20:
             if ultimo_sinal_enviado == chave_sinal:
+                continue
+            if sinais_por_hora.get(hora_chave, 0) >= 2:
+                print("⚠️ Limite de sinais por hora atingido")
                 continue
 
             mensagem = f"📊 {ativo} - ${preco:.5f}\n"
@@ -110,9 +115,10 @@ def monitorar():
             preco_anterior = preco
             sinal = "⚪ SEM AÇÃO"
 
-            if rsi < 45 or (ma5 > ma20 and variacao > 0.01):
+            # Estratégia refinada com precisão
+            if rsi < 35 and ma5 > ma20 and variacao > 0.02:
                 sinal = f"🟢 COMPRA às {horario_entrada}"
-            elif rsi > 55 or (ma5 < ma20 and variacao < -0.01):
+            elif rsi > 65 and ma5 < ma20 and variacao < -0.02:
                 sinal = f"🔴 VENDA às {horario_entrada}"
 
             if "COMPRA" in sinal or "VENDA" in sinal:
@@ -121,13 +127,19 @@ def monitorar():
                 mensagem += f"📍 SINAL: {sinal}"
                 enviar_sinal(mensagem)
                 ultimo_sinal_enviado = chave_sinal
+                sinais_por_hora[hora_chave] = sinais_por_hora.get(hora_chave, 0) + 1
+            else:
+                print("🔎 Condições não confirmadas - Sem sinal.")
+
+        else:
+            print("⚠️ Dados insuficientes para decisão.")
 
         time.sleep(1)
 
 # === INICIAR BOT EM THREAD ===
 threading.Thread(target=monitorar, daemon=True).start()
 
-# === FLASK APP PARA MANTER O BOT ACORDADO ===
+# === FLASK APP PARA MANTER O BOT ONLINE ===
 app = Flask(__name__)
 
 @app.route("/")
@@ -140,4 +152,4 @@ def ping():
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=10000)
-    
+            
