@@ -4,6 +4,7 @@ import telegram
 from datetime import datetime
 from flask import Flask
 import threading
+import pytz  # ✅ Importa o módulo para fusos horários
 
 # === CONFIGURAÇÕES ===
 API_KEY = "c95f42c34f934f91938f91e5cc8604a6"
@@ -66,7 +67,6 @@ def calcular_sinal():
         enviar_sinal(msg)
         return
 
-    # Pega duas últimas velas
     ultima = candles[0]
     anterior = candles[1]
 
@@ -82,13 +82,16 @@ def calcular_sinal():
     else:
         direcao = "⏸️ LATERAL"
 
+    # ✅ Hora no fuso de Brasília
+    horario_brasilia = datetime.now(pytz.timezone("America/Sao_Paulo")).strftime('%H:%M:%S')
+
     mensagem = (
         f"SINAL DE ENTRADA 🔔\n"
         f"Ativo: {ativo}\n"
         f"Direção: {direcao}\n"
         f"Fechamento anterior: {fechamento_passado:.5f}\n"
         f"Fechamento atual: {fechamento_atual:.5f}\n"
-        f"Horário: {datetime.now().strftime('%H:%M:%S')}"
+        f"Horário: {horario_brasilia}"
     )
 
     enviar_sinal(mensagem)
