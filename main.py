@@ -1,23 +1,23 @@
 import time
 import requests
-import telegram
+from telegram import Bot
 from datetime import datetime
 from flask import Flask
 import threading
-import pytz  # ✅ Importa o módulo para fusos horários
+import pytz
 
 # === CONFIGURAÇÕES ===
 API_KEY = "c95f42c34f934f91938f91e5cc8604a6"
-TELEGRAM_TOKEN = "7239698274:AAFyg7HWLPvXceJYDope17DkfJpxtU4IU2Y"
-TELEGRAM_ID = "6821521589"
+TOKEN = '7239698274:AAFyg7HWLPvXceJYDope17DkfJpxtU4IU2Y'
+CHAT_ID = 6821521589
 INTERVALO = "1min"
 
-bot = telegram.Bot(token=TELEGRAM_TOKEN)
+bot = Bot(token=TOKEN)
 app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "Bot de sinais ativo!"
+    return "✅ Bot de sinais ativo com precisão aprimorada!"
 
 # === Obter o ativo do arquivo ===
 def obter_ativo():
@@ -33,7 +33,7 @@ def obter_ativo():
 # === Enviar mensagem pelo Telegram ===
 def enviar_sinal(texto):
     try:
-        bot.send_message(chat_id=TELEGRAM_ID, text=texto)
+        bot.send_message(chat_id=CHAT_ID, text=texto)
         print(f"[ENVIADO] {texto}")
     except Exception as e:
         print(f"[ERRO TELEGRAM] {e}")
@@ -56,6 +56,16 @@ def obter_candles(ativo):
         print(f"[ERRO API] {e}")
         return None
 
+# === Análise mais precisa ===
+def candle_info(candle):
+    open_price = float(candle["open"])
+    close_price = float(candle["close"])
+    high = float(candle["high"])
+    low = float(candle["low"])
+    corpo = abs(close_price - open_price)
+    pavio = (high - low) - corpo
+    return open_price, close_price, corpo, pavio
+
 # === Lógica de cálculo e envio do sinal ===
 def calcular_sinal():
     ativo = obter_ativo()
@@ -67,44 +77,47 @@ def calcular_sinal():
         enviar_sinal(msg)
         return
 
-    ultima = candles[0]
+    atual = candles[0]
     anterior = candles[1]
 
-    fechamento_atual = float(ultima["close"])
-    fechamento_passado = float(anterior["close"])
+    o1, c1, corpo1, pavio1 = candle_info(anterior)
+    o2, c2, corpo2, pavio2 = candle_info(atual)
 
-    print(f"[DADOS] Último: {fechamento_atual}, Anterior: {fechamento_passado}")
+    print(f"[DADOS] Último candle: {c2:.5f}, Anterior: {c1:.5f}")
+    print(f"[DETALHES] Corpo1: {corpo1:.5f}, Pavio1: {pavio1:.5f}")
 
-    if fechamento_atual > fechamento_passado:
+    # Regras mais sensíveis
+    if corpo1 < pavio1 * 0.5:
+        direcao = "⏸️ LATERAL (vela de indecisão)"
+    elif c2 > c1:
         direcao = "📈 COMPRA"
-    elif fechamento_atual < fechamento_passado:
+    elif c2 < c1:
         direcao = "📉 VENDA"
     else:
-        direcao = "⏸️ LATERAL"
+        direcao = "⏸️ SEM DIREÇÃO"
 
-    # ✅ Hora no fuso de Brasília
     horario_brasilia = datetime.now(pytz.timezone("America/Sao_Paulo")).strftime('%H:%M:%S')
 
     mensagem = (
-        f"SINAL DE ENTRADA 🔔\n"
+        f"🔔 SINAL DE ENTRADA\n"
         f"Ativo: {ativo}\n"
         f"Direção: {direcao}\n"
-        f"Fechamento anterior: {fechamento_passado:.5f}\n"
-        f"Fechamento atual: {fechamento_atual:.5f}\n"
-        f"Horário: {horario_brasilia}"
+        f"Fechamento anterior: {c1:.5f}\n"
+        f"Fechamento atual: {c2:.5f}\n"
+        f"Horário (Brasília): {horario_brasilia}"
     )
 
     enviar_sinal(mensagem)
 
-# === Loop que roda a análise a cada minuto ===
+# === Loop principal do bot ===
 def iniciar_bot():
-    enviar_sinal("✅ Bot de sinais iniciado com sucesso!")
+    enviar_sinal("✅ Bot de sinais iniciado com precisão aprimorada!")
     while True:
         print("[LOOP] Executando nova análise...")
         calcular_sinal()
         time.sleep(60)
 
-# === Thread principal ===
+# === Início em thread separada ===
 threading.Thread(target=iniciar_bot).start()
 
 if __name__ == "__main__":
